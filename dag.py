@@ -4,6 +4,7 @@ import logging
 
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
+from tasks import *
 
 
 def hello_world():
@@ -13,6 +14,7 @@ def hello_world():
 #
 # TODO: Add a daily `schedule_interval` argument to the following DAG
 #
+
 dag = DAG(
     "vn_stock.etl",
     start_date=datetime.datetime.now() - datetime.timedelta(days=60),
