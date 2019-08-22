@@ -4,7 +4,6 @@ import logging
 
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
-from tasks import *
 
 
 def hello_world():
