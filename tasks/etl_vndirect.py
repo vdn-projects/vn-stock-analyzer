@@ -12,8 +12,8 @@ from selenium.webdriver.common.by import By
 import psycopg2
 import pandas as pd
 
-import config
-import sql_queries
+import vn_stock.tasks.config as config
+import vn_stock.tasks.sql_queries
 
 
 def delete_files(path, wildcard):

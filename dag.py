@@ -5,6 +5,8 @@ import logging
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 
+from vn_stock.tasks import etl_vndirect
+
 
 def hello_world():
     logging.info("Hello World")
@@ -17,9 +19,9 @@ def hello_world():
 dag = DAG(
     "vn_stock.etl",
     start_date=datetime.datetime.now() - datetime.timedelta(days=60),
-    schedule_interval='@monthly')
+    schedule_interval='@daily')
 
 task = PythonOperator(
-    task_id="hello_world_task",
-    python_callable=hello_world,
+    task_id="stock_ingestion",
+    python_callable=etl_vndirect.main(),
     dag=dag)
