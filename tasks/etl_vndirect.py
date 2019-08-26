@@ -4,7 +4,6 @@ import glob
 from datetime import datetime, timedelta
 from pytz import timezone
 import logging
-from pyvirtualdisplay import Display
 
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
@@ -15,6 +14,22 @@ import pandas as pd
 
 import tasks.config as config
 import tasks.sql_queries as sql_queries
+
+
+def wait_download(ticker_code, interval=1, max_wait=10):
+    time_elapsed = 0
+    fileList = glob.glob(config.download_path +
+                         f"/historical-price-{ticker_code}*")
+    while len(fileList) < 1:
+        time.sleep(interval)
+        time_elapsed += interval
+        if time_elapsed > max_wait:
+            raise Exception(
+                f"Timeout of waiting ticker {ticker_code} downloaded!")
+
+        fileList = glob.glob(config.download_path +
+                             f"/historical-price-{ticker_code}*")
+    return True
 
 
 def get_logger(log_path, max_bytes=1000):
@@ -48,12 +63,6 @@ def enable_download_headless(browser, download_dir):
 
 
 def initialize():
-    # Virtual display is used for VPS only, for local test it is diabled
-    vdisplay = None
-    if config.use_virtual_screen:
-        vdisplay = Display(visible=0, size=(800, 600))
-        vdisplay.start()
-
     # Init chrome driver
     url = "https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml"
     options = webdriver.ChromeOptions()
@@ -69,26 +78,35 @@ def initialize():
     })
     options.add_argument('--disable-gpu')
     options.add_argument('--disable-software-rasterizer')
+    options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--headless')
     # options.add_argument('--disable-gpu')
-    driver = webdriver.Chrome(
+    _driver = webdriver.Chrome(
         executable_path='/usr/local/bin/chromedriver', chrome_options=options)
 
-    driver.command_executor._commands["send_command"] = (
+    _driver.command_executor._commands["send_command"] = (
         "POST", '/session/$sessionId/chromium/send_command')
     params = {'cmd': 'Page.setDownloadBehavior', 'params': {
         'behavior': 'allow', 'downloadPath': config.download_path}}
-    driver.execute("send_command", params)
+    _driver.execute("send_command", params)
 
-    driver.get(url)
+    send_command = ('POST', '/session/$sessionId/chromium/send_command')
+    _driver.command_executor._commands['SEND_COMMAND'] = send_command
+    _driver.execute('SEND_COMMAND', dict(
+        cmd='Network.clearBrowserCache', params={}))
 
-    return vdisplay, driver
+    _driver.get(url)
+
+    return _driver
 
 
 def process(driver, ticker_code, from_date, to_date, logger):
     """
     Selenium task to down load the price list
     """
+
+    # driver.refresh()
+
     # Input ticker code
     elem = driver.find_element_by_css_selector('#symbolID')
     elem.send_keys(ticker_code)
@@ -107,28 +125,32 @@ def process(driver, ticker_code, from_date, to_date, logger):
         elem.click()
 
         # Wait until the table appear, over 5 seconds it will dismiss this ticker code and iterate for other one
-        elem = WebDriverWait(driver, 5, 1).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, '#tab-1 > div.box_content_tktt > ul > li:nth-child(2) > div.row-time.noline')))
+        elem = WebDriverWait(driver, 10, 1).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, '#tab-1 > div.paging > span > a > b')))
+
+        # elem = WebDriverWait(driver, 5, 1).until(
+        #     EC.presence_of_element_located((By.ID, 'hoseIcon')))
 
         # Click download button
+        # driver.implicitly_wait(15)
+
         elem = driver.find_element_by_css_selector(
             '#tab-1 > div.box_content_tktt > div > div > a > span.text')
         elem.click()
 
         # Wait until the file is downloaded successfully
-        # WebDriverWait(driver, 10, 2).until(confirm_download,
+        # WebDriverWait(driver, 10, 2).until(wait_download(ticker_code, 10),
         #                                    f"Download complete for {ticker_code}.")
+        wait_download(ticker_code, 2, 10)
         logger.info(f"Download complete for {ticker_code}.")
     except Exception as ex:
         logger.error(ticker_code + " | " + getattr(ex, 'message', repr(ex)))
 
 
-def quit(vdisplay, driver):
+def quit(driver):
     if driver:
         driver.close()
         driver.quit()
-    if vdisplay and config.use_virtual_screen:
-        vdisplay.stop()
 
 
 def get_tickers():
@@ -198,18 +220,16 @@ def main(n_days=4):
 
     tickers = get_tickers()
     logger.info(f"There are {tickers.shape[0]}")
-    display = None
-    driver = None
+    driver = initialize()
     for i, ticker in tickers.iterrows():
         try:
-            display, driver = initialize()
             process(driver, ticker.ticker_code, from_date, to_date, logger)
-            quit(display, driver)
+
         except Exception as ex:
-            quit(display, driver)
+            quit(driver)
             logger.error(ticker.ticker_code + " | " +
                          getattr(ex, 'message', repr(ex)))
-
+    quit(driver)
     # Update changes if any into historical price table
     load_historical_price(config.download_path, logger)
 
