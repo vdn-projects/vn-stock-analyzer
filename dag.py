@@ -19,9 +19,9 @@ def hello_world():
 dag = DAG(
     "vn_stock.etl",
     start_date=datetime.datetime.now() - datetime.timedelta(days=60),
-    schedule_interval='@daily')
+    schedule_interval='@once')
 
 task = PythonOperator(
     task_id="stock_ingestion",
-    python_callable=etl_vndirect.main(),
+    python_callable=etl_vndirect.main,
     dag=dag)

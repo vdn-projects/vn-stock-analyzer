@@ -4,6 +4,7 @@ import glob
 from datetime import datetime, timedelta
 from pytz import timezone
 import logging
+from pyvirtualdisplay import Display
 
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
@@ -12,8 +13,12 @@ from selenium.webdriver.common.by import By
 import psycopg2
 import pandas as pd
 
-import vn_stock.tasks.config as config
-import vn_stock.tasks.sql_queries
+import tasks.config as config
+import tasks.sql_queries as sql_queries
+
+
+def get_logger(log_path, max_bytes=1000):
+    pass
 
 
 def delete_files(path, wildcard):
@@ -34,27 +39,50 @@ def confirm_download(driver):
         """)
 
 
+def enable_download_headless(browser, download_dir):
+    browser.command_executor._commands["send_command"] = (
+        "POST", '/session/$sessionId/chromium/send_command')
+    params = {'cmd': 'Page.setDownloadBehavior', 'params': {
+        'behavior': 'allow', 'downloadPath': download_dir}}
+    browser.execute("send_command", params)
+
+
 def initialize():
     # Virtual display is used for VPS only, for local test it is diabled
-    display = None
+    vdisplay = None
     if config.use_virtual_screen:
-        from pyvirtualdisplay import Display
-        display = Display(visible=0, size=(800, 600))
-        display.start()
+        vdisplay = Display(visible=0, size=(800, 600))
+        vdisplay.start()
 
     # Init chrome driver
     url = "https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml"
     options = webdriver.ChromeOptions()
+    options.add_argument("--disable-notifications")
     options.add_argument('--no-sandbox')
-    prefs = {"download.default_directory": config.download_path}
-    options.add_experimental_option("prefs", prefs)
-    # options.add_argument('headless')
-    # options.add_argument('window-size=1200x600')
+    options.add_argument('--verbose')
+    options.add_experimental_option("prefs", {
+        "download.default_directory": config.download_path,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing_for_trusted_sources_enabled": False,
+        "safebrowsing.enabled": False
+    })
+    options.add_argument('--disable-gpu')
+    options.add_argument('--disable-software-rasterizer')
+    options.add_argument('--headless')
+    # options.add_argument('--disable-gpu')
     driver = webdriver.Chrome(
         executable_path='/usr/local/bin/chromedriver', chrome_options=options)
+
+    driver.command_executor._commands["send_command"] = (
+        "POST", '/session/$sessionId/chromium/send_command')
+    params = {'cmd': 'Page.setDownloadBehavior', 'params': {
+        'behavior': 'allow', 'downloadPath': config.download_path}}
+    driver.execute("send_command", params)
+
     driver.get(url)
 
-    return display, driver
+    return vdisplay, driver
 
 
 def process(driver, ticker_code, from_date, to_date, logger):
@@ -88,18 +116,19 @@ def process(driver, ticker_code, from_date, to_date, logger):
         elem.click()
 
         # Wait until the file is downloaded successfully
-        WebDriverWait(driver, 10, 2).until(confirm_download,
-                                           f"Download complete for {ticker_code}.")
-
+        # WebDriverWait(driver, 10, 2).until(confirm_download,
+        #                                    f"Download complete for {ticker_code}.")
+        logger.info(f"Download complete for {ticker_code}.")
     except Exception as ex:
         logger.error(ticker_code + " | " + getattr(ex, 'message', repr(ex)))
 
 
-def quit(display, driver):
-    driver.close()
-    driver.quit()
-    if config.use_virtual_screen:
-        display.stop()
+def quit(vdisplay, driver):
+    if driver:
+        driver.close()
+        driver.quit()
+    if vdisplay and config.use_virtual_screen:
+        vdisplay.stop()
 
 
 def get_tickers():
@@ -144,14 +173,14 @@ def main(n_days=4):
     """
     Download stock prices of last n days
     """
-
     # Init the logging instance
     logging.basicConfig(filename="./app.log",
                         format="%(asctime)s: %(levelname)s: %(message)s",
                         datefmt="%d/%m/%Y %I:%M:%S %p")
     logger = logging.getLogger()
-    logger.setLevel(logging.ERROR)
+    logger.setLevel(logging.INFO)
 
+    logging.info("Initialize the program")
     time_zone = "Asia/Saigon"
     date_format = "%d/%m/%Y"
 
@@ -165,7 +194,12 @@ def main(n_days=4):
     delete_files(config.download_path, "*.csv")
 
     # Run selenium to download csv files
+    logging.info("Read list of ticker from database")
+
     tickers = get_tickers()
+    logger.info(f"There are {tickers.shape[0]}")
+    display = None
+    driver = None
     for i, ticker in tickers.iterrows():
         try:
             display, driver = initialize()
@@ -184,4 +218,5 @@ def main(n_days=4):
 
 
 if __name__ == "__main__":
+    logging.info("Program starts ...")
     main()
