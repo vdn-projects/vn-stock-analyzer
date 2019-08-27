@@ -31,14 +31,6 @@ def delete_files(path, wildcard):
         os.remove(file)
 
 
-def enable_download_headless(browser, download_dir):
-    browser.command_executor._commands["send_command"] = (
-        "POST", '/session/$sessionId/chromium/send_command')
-    params = {'cmd': 'Page.setDownloadBehavior', 'params': {
-        'behavior': 'allow', 'downloadPath': download_dir}}
-    browser.execute("send_command", params)
-
-
 def initialize():
     # Init chrome driver
     url = "https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml?request_locale=en"
@@ -50,7 +42,7 @@ def initialize():
     options.add_argument('--disable-software-rasterizer')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--headless')
-    # options.add_argument('--disable-gpu')
+
     _driver = webdriver.Chrome(
         executable_path='/usr/local/bin/chromedriver', chrome_options=options)
 
