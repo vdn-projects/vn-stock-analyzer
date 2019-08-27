@@ -64,7 +64,7 @@ def enable_download_headless(browser, download_dir):
 
 def initialize():
     # Init chrome driver
-    url = "https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml"
+    url = "https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml?request_locale=en"
     options = webdriver.ChromeOptions()
     options.add_argument("--disable-notifications")
     options.add_argument('--no-sandbox')
@@ -90,10 +90,10 @@ def initialize():
         'behavior': 'allow', 'downloadPath': config.download_path}}
     _driver.execute("send_command", params)
 
-    send_command = ('POST', '/session/$sessionId/chromium/send_command')
-    _driver.command_executor._commands['SEND_COMMAND'] = send_command
-    _driver.execute('SEND_COMMAND', dict(
-        cmd='Network.clearBrowserCache', params={}))
+    # send_command = ('POST', '/session/$sessionId/chromium/send_command')
+    # _driver.command_executor._commands['SEND_COMMAND'] = send_command
+    # _driver.execute('SEND_COMMAND', dict(
+    #     cmd='Network.clearBrowserCache', params={}))
 
     _driver.get(url)
 
@@ -123,25 +123,34 @@ def process(driver, ticker_code, from_date, to_date, logger):
         # View historical price list
         elem = driver.find_element_by_css_selector('#fHistoricalPrice_View')
         elem.click()
+        # driver.implicitly_wait(5)
 
         # Wait until the table appear, over 5 seconds it will dismiss this ticker code and iterate for other one
-        elem = WebDriverWait(driver, 10, 1).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, '#tab-1 > div.paging > span > a > b')))
+        WebDriverWait(driver, 10, 1).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, '#tab-1 > div.box_content_tktt > ul > li:nth-child(2) > div.row2 > span')))
+        # driver.implicitly_wait(15)
+
+        elem = driver.find_element_by_css_selector(
+            "#tab-1 > div.box_content_tktt > ul")
+        source_code = elem.get_attribute("innerHTML")
+
+        f = open(f'./vn_stock/data/download/{ticker_code}.html', 'wb')
+        f.write(source_code.encode('utf-8'))
+        f.close()
 
         # elem = WebDriverWait(driver, 5, 1).until(
         #     EC.presence_of_element_located((By.ID, 'hoseIcon')))
 
         # Click download button
         # driver.implicitly_wait(15)
-
-        elem = driver.find_element_by_css_selector(
-            '#tab-1 > div.box_content_tktt > div > div > a > span.text')
-        elem.click()
+        # elem = driver.find_element_by_css_selector(
+        #     '#tab-1 > div.box_content_tktt > div > div > a > span.text')
+        # elem.click()
 
         # Wait until the file is downloaded successfully
         # WebDriverWait(driver, 10, 2).until(wait_download(ticker_code, 10),
         #                                    f"Download complete for {ticker_code}.")
-        wait_download(ticker_code, 2, 10)
+        # wait_download(ticker_code, 2, 10)
         logger.info(f"Download complete for {ticker_code}.")
     except Exception as ex:
         logger.error(ticker_code + " | " + getattr(ex, 'message', repr(ex)))
@@ -213,23 +222,24 @@ def main(n_days=4):
                timedelta(days=1)).strftime(date_format)
 
     # Clean csv remaing if any before download
-    delete_files(config.download_path, "*.csv")
+    delete_files(config.download_path, "*.*")
 
     # Run selenium to download csv files
     logging.info("Read list of ticker from database")
 
     tickers = get_tickers()
     logger.info(f"There are {tickers.shape[0]}")
-    driver = initialize()
+
     for i, ticker in tickers.iterrows():
         try:
+            driver = initialize()
             process(driver, ticker.ticker_code, from_date, to_date, logger)
-
+            quit(driver)
         except Exception as ex:
             quit(driver)
             logger.error(ticker.ticker_code + " | " +
                          getattr(ex, 'message', repr(ex)))
-    quit(driver)
+
     # Update changes if any into historical price table
     load_historical_price(config.download_path, logger)
 
