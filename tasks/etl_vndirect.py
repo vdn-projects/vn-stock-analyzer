@@ -1,6 +1,7 @@
 import os
 import time
 import glob
+from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from pytz import timezone
 import logging
@@ -16,20 +17,9 @@ import tasks.config as config
 import tasks.sql_queries as sql_queries
 
 
-def wait_download(ticker_code, interval=1, max_wait=10):
-    time_elapsed = 0
-    fileList = glob.glob(config.download_path +
-                         f"/historical-price-{ticker_code}*")
-    while len(fileList) < 1:
-        time.sleep(interval)
-        time_elapsed += interval
-        if time_elapsed > max_wait:
-            raise Exception(
-                f"Timeout of waiting ticker {ticker_code} downloaded!")
-
-        fileList = glob.glob(config.download_path +
-                             f"/historical-price-{ticker_code}*")
-    return True
+def is_number(s):
+    """ Returns True is string is a number. """
+    return s.replace('.', '', 1).isdigit()
 
 
 def get_logger(log_path, max_bytes=1000):
@@ -39,19 +29,6 @@ def get_logger(log_path, max_bytes=1000):
 def delete_files(path, wildcard):
     for file in glob.glob(os.path.join(path, wildcard)):
         os.remove(file)
-
-
-def confirm_download(driver):
-    """
-    Repeatly check the downloading file completed or not to execute the close step
-    """
-    if not driver.current_url.startswith("chrome://downloads"):
-        driver.get("chrome://downloads/")
-    return driver.execute_script("""
-        var items = downloads.Manager.get().items_;
-        if (items.every(e => e.state === "COMPLETE"))
-            return items.map(e => e.file_url);
-        """)
 
 
 def enable_download_headless(browser, download_dir):
@@ -69,13 +46,6 @@ def initialize():
     options.add_argument("--disable-notifications")
     options.add_argument('--no-sandbox')
     options.add_argument('--verbose')
-    options.add_experimental_option("prefs", {
-        "download.default_directory": config.download_path,
-        "download.prompt_for_download": False,
-        "download.directory_upgrade": True,
-        "safebrowsing_for_trusted_sources_enabled": False,
-        "safebrowsing.enabled": False
-    })
     options.add_argument('--disable-gpu')
     options.add_argument('--disable-software-rasterizer')
     options.add_argument('--disable-dev-shm-usage')
@@ -83,17 +53,6 @@ def initialize():
     # options.add_argument('--disable-gpu')
     _driver = webdriver.Chrome(
         executable_path='/usr/local/bin/chromedriver', chrome_options=options)
-
-    _driver.command_executor._commands["send_command"] = (
-        "POST", '/session/$sessionId/chromium/send_command')
-    params = {'cmd': 'Page.setDownloadBehavior', 'params': {
-        'behavior': 'allow', 'downloadPath': config.download_path}}
-    _driver.execute("send_command", params)
-
-    # send_command = ('POST', '/session/$sessionId/chromium/send_command')
-    # _driver.command_executor._commands['SEND_COMMAND'] = send_command
-    # _driver.execute('SEND_COMMAND', dict(
-    #     cmd='Network.clearBrowserCache', params={}))
 
     _driver.get(url)
 
@@ -123,34 +82,44 @@ def process(driver, ticker_code, from_date, to_date, logger):
         # View historical price list
         elem = driver.find_element_by_css_selector('#fHistoricalPrice_View')
         elem.click()
-        # driver.implicitly_wait(5)
 
-        # Wait until the table appear, over 5 seconds it will dismiss this ticker code and iterate for other one
+        # Wait until the table appear, over 10 seconds it will dismiss this ticker code and iterate for other one
         WebDriverWait(driver, 10, 1).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, '#tab-1 > div.box_content_tktt > ul > li:nth-child(2) > div.row2 > span')))
         # driver.implicitly_wait(15)
 
         elem = driver.find_element_by_css_selector(
             "#tab-1 > div.box_content_tktt > ul")
-        source_code = elem.get_attribute("innerHTML")
+        price_table = elem.get_attribute("innerHTML")
 
-        f = open(f'./vn_stock/data/download/{ticker_code}.html', 'wb')
-        f.write(source_code.encode('utf-8'))
-        f.close()
+        data_dict = {}
+        source = BeautifulSoup(price_table, "html.parser")
 
-        # elem = WebDriverWait(driver, 5, 1).until(
-        #     EC.presence_of_element_located((By.ID, 'hoseIcon')))
+        # Parsing date
+        days = [datetime.strptime(x.get_text().strip(), "%Y-%m-%d")
+                for x in source.select("li div.row-time.noline")[1:]]
+        data_dict["ticker_code"] = [ticker_code for x in range(len(days))]
+        data_dict["date"] = days
 
-        # Click download button
-        # driver.implicitly_wait(15)
-        # elem = driver.find_element_by_css_selector(
-        #     '#tab-1 > div.box_content_tktt > div > div > a > span.text')
-        # elem.click()
+        # Parsing prices
+        prices = [(float(x.get_text().strip()) if is_number(x.get_text().strip(
+        )) else x.get_text().strip()) for x in source.select("li div.row1")]
+        data_dict["open"] = prices[6::6]
+        data_dict["highest"] = prices[7::6]
+        data_dict["lowest"] = prices[8::6]
+        data_dict["close"] = prices[9::6]
+        data_dict["average"] = prices[10::6]
+        data_dict["adjusted"] = prices[11::6]
 
-        # Wait until the file is downloaded successfully
-        # WebDriverWait(driver, 10, 2).until(wait_download(ticker_code, 10),
-        #                                    f"Download complete for {ticker_code}.")
-        # wait_download(ticker_code, 2, 10)
+        # Parsing volume
+        volumes = [((float(x.get_text().strip())) if is_number(
+            x.get_text().strip()) else None) for x in source.select("li div.row3")[2:]]
+        data_dict["trading_volume"] = volumes[0::2]
+        data_dict["put_through_volume"] = volumes[1::2]
+
+        df = pd.DataFrame(data_dict)
+        df.to_csv(f"{config.download_path}/{ticker_code}.csv", index=None)
+
         logger.info(f"Download complete for {ticker_code}.")
     except Exception as ex:
         logger.error(ticker_code + " | " + getattr(ex, 'message', repr(ex)))
