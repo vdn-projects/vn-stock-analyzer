@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from pytz import timezone
 import logging
+import traceback
 
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
@@ -33,7 +34,8 @@ def delete_files(path, wildcard):
 
 def initialize():
     # Init chrome driver
-    url = "https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml?request_locale=en"
+    # url = "https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml?request_locale=en"
+    url = "https://www.vndirect.com.vn/portal/thong-tin-co-phieu/nhap-ma-chung-khoan.shtml"
     options = webdriver.ChromeOptions()
     options.add_argument("--disable-notifications")
     options.add_argument('--no-sandbox')
@@ -43,20 +45,113 @@ def initialize():
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--headless')
 
-    _driver = webdriver.Chrome(
+    driver = webdriver.Chrome(
         executable_path='/usr/local/bin/chromedriver', chrome_options=options)
 
-    _driver.get(url)
+    driver.get(url)
 
-    return _driver
+    return driver
+
+
+def refresh_ticker_page(driver, max_retries=10):
+    retry = 0
+    while(retry <= max_retries):
+        try:
+            driver.refresh()
+            elem = driver.find_element_by_css_selector(
+                '#fSearchSymbol_btnSymbolSearch')
+            elem.click()
+            WebDriverWait(driver, 5, 1).until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, '#fSearchSymbol_result > table > tbody > tr:nth-child(1) > td:nth-child(1) > span')))
+            return 1
+        except Exception as ex:
+            retry += 1
+    raise Exception("Cannot load ticker table")
+
+
+def end_page(driver):
+    try:
+        WebDriverWait(driver, 5, 1).until(EC.presence_of_element_located(
+            (By.CSS_SELECTOR, '#fSearchSymbol_paging > div > span.next > a')))
+        return False
+    except Exception as ex:  # Not found the next button
+        return True
+
+
+def click_next_page(driver, logger, max_retries=10):
+    prev_ticker = driver.find_element_by_css_selector(
+        '#fSearchSymbol_result > table > tbody > tr:nth-child(1) > td:nth-child(1) > span > a').text
+    curr_ticker = prev_ticker
+    retry = 0
+    while(curr_ticker == prev_ticker and retry <= max_retries):
+        elem = driver.find_element_by_css_selector(
+            '#fSearchSymbol_paging > div > span.next')
+        elem.click()
+        driver.implicitly_wait(2)
+        curr_ticker = driver.find_element_by_css_selector(
+            '#fSearchSymbol_result > table > tbody > tr:nth-child(1) > td:nth-child(1) > span > a').text
+        logger.info(f" current: {curr_ticker} - previous: {prev_ticker}")
+        retry += 1
+        return 0
+    raise Exception("Cannot click next page")
+
+
+def crawl_ticker(driver, logger):
+    """
+    Selenium task to crawl ticker code and its information
+    """
+    count = 0
+    refresh_ticker_page(driver)
+    try:
+        # First click
+        while not end_page(driver):
+            # Get ticker table of current selected page
+            elem = driver.find_element_by_css_selector(
+                "#fSearchSymbol_result")
+            ticker_table = elem.get_attribute("innerHTML")
+
+            with open(f"{config.download_path}/{count}.html", "w") as f:
+                f.write(ticker_table)
+
+            # data_dict = {}
+            # source = BeautifulSoup(price_table, "html.parser")
+
+            # # Parsing date
+            # days = [datetime.strptime(x.get_text().strip(), "%Y-%m-%d")
+            #         for x in source.select("li div.row-time.noline")[1:]]
+            # data_dict["ticker_code"] = [ticker_code for x in range(len(days))]
+            # data_dict["date"] = days
+
+            # # Parsing prices
+            # prices = [(float(x.get_text().strip()) if is_number(x.get_text().strip(
+            # )) else x.get_text().strip()) for x in source.select("li div.row1")]
+            # data_dict["open"] = prices[6::6]
+            # data_dict["highest"] = prices[7::6]
+            # data_dict["lowest"] = prices[8::6]
+            # data_dict["close"] = prices[9::6]
+            # data_dict["average"] = prices[10::6]
+            # data_dict["adjusted"] = prices[11::6]
+
+            # # Parsing volume
+            # volumes = [((float(x.get_text().strip())) if is_number(
+            #     x.get_text().strip()) else None) for x in source.select("li div.row3")[2:]]
+            # data_dict["trading_volume"] = volumes[0::2]
+            # data_dict["put_through_volume"] = volumes[1::2]
+
+            # df = pd.DataFrame(data_dict)
+            # df.to_csv(f"{config.download_path}/{ticker_code}.csv", index=None)
+
+            logger.info(f"Page {count} completed.")
+            count += 1
+            click_next_page(driver, logger)
+    except Exception as ex:
+        logger.error(f"Page{count} | " + traceback.format_exc())
 
 
 def process(driver, ticker_code, from_date, to_date, logger):
     """
     Selenium task to down load the price list
     """
-
-    # driver.refresh()
 
     # Input ticker code
     elem = driver.find_element_by_css_selector('#symbolID')
@@ -78,7 +173,6 @@ def process(driver, ticker_code, from_date, to_date, logger):
         # Wait until the table appear, over 10 seconds it will dismiss this ticker code and iterate for other one
         WebDriverWait(driver, 10, 1).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, '#tab-1 > div.box_content_tktt > ul > li:nth-child(2) > div.row2 > span')))
-        # driver.implicitly_wait(15)
 
         elem = driver.find_element_by_css_selector(
             "#tab-1 > div.box_content_tktt > ul")
@@ -191,21 +285,24 @@ def main(n_days=4):
     tickers = get_tickers()
     logger.info(f"There are {tickers.shape[0]}")
 
-    for i, ticker in tickers.iterrows():
-        try:
-            driver = initialize()
-            process(driver, ticker.ticker_code, from_date, to_date, logger)
-            quit(driver)
-        except Exception as ex:
-            quit(driver)
-            logger.error(ticker.ticker_code + " | " +
-                         getattr(ex, 'message', repr(ex)))
+    driver = initialize()
+    crawl_ticker(driver, logger)
+
+    # for i, ticker in tickers.iterrows():
+    #     try:
+    #         driver = initialize()
+    #         process(driver, ticker.ticker_code, from_date, to_date, logger)
+    #         quit(driver)
+    #     except Exception as ex:
+    #         quit(driver)
+    #         logger.error(ticker.ticker_code + " | " +
+    #                      getattr(ex, 'message', repr(ex)))
 
     # Update changes if any into historical price table
-    load_historical_price(config.download_path, logger)
+    # load_historical_price(config.download_path, logger)
 
     # Clean csv remaing if any after download
-    delete_files(config.download_path, "*.csv")
+    # delete_files(config.download_path, "*.csv")
 
 
 if __name__ == "__main__":
