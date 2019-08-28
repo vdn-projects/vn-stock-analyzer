@@ -11,6 +11,7 @@ from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+
 import psycopg2
 import pandas as pd
 
@@ -78,29 +79,40 @@ def end_page(driver):
         return True
 
 
-def click_next_page(driver, logger, max_retries=10):
-    prev_ticker = driver.find_element_by_css_selector(
-        '#fSearchSymbol_result > table > tbody > tr:nth-child(1) > td:nth-child(1) > span > a').text
-    curr_ticker = prev_ticker
-    retry = 0
-    while(curr_ticker == prev_ticker and retry <= max_retries):
-        elem = driver.find_element_by_css_selector(
-            '#fSearchSymbol_paging > div > span.next')
-        elem.click()
-        driver.implicitly_wait(2)
-        curr_ticker = driver.find_element_by_css_selector(
-            '#fSearchSymbol_result > table > tbody > tr:nth-child(1) > td:nth-child(1) > span > a').text
-        logger.info(f" current: {curr_ticker} - previous: {prev_ticker}")
-        retry += 1
-        return 0
-    raise Exception("Cannot click next page")
+def click_next_page(driver, page_no, logger, max_retries=10):
+    # prev_ticker = driver.find_element_by_css_selector(
+    #     '#fSearchSymbol_result > table > tbody > tr:nth-child(1) > td:nth-child(1) > span > a').text
+    # curr_ticker = prev_ticker
+    # retry = 0
+    # while(curr_ticker == prev_ticker and retry <= max_retries):
+    #     elem = driver.find_element_by_css_selector(
+    #         '#fSearchSymbol_paging > div > span.next > a')
+
+    #     driver.execute_script("arguments[0].click();", elem)
+
+    #     curr_ticker = driver.find_element_by_css_selector(
+    #         '#fSearchSymbol_result > table > tbody > tr:nth-child(1) > td:nth-child(1) > span > a').text
+    #     logger.info(f" current: {curr_ticker} - previous: {prev_ticker}")
+    #     retry += 1
+    #     return 0
+    # raise Exception("Cannot click next page")
+
+    # elem = driver.find_element_by_css_selector(
+    #     '#fSearchSymbol_paging > div > span.next > a')
+    # elem = WebDriverWait(driver, 5, 1).until(EC.presence_of_element_located(
+    #     (By.CSS_SELECTOR, '#fSearchSymbol_paging > div > span.next > a')))
+    # driver.execute_script("arguments[0].click();", elem)
+    # driver.implicitly_wait(5)
+    driver.execute_script(
+        f"javascript:_goTo('fSearchSymbol_paging',{page_no})")
+    time.sleep(2)
 
 
 def crawl_ticker(driver, logger):
     """
     Selenium task to crawl ticker code and its information
     """
-    count = 0
+    count = 1
     refresh_ticker_page(driver)
     try:
         # First click
@@ -143,7 +155,7 @@ def crawl_ticker(driver, logger):
 
             logger.info(f"Page {count} completed.")
             count += 1
-            click_next_page(driver, logger)
+            click_next_page(driver, count, logger)
     except Exception as ex:
         logger.error(f"Page{count} | " + traceback.format_exc())
 
