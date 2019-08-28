@@ -36,7 +36,7 @@ def delete_files(path, wildcard):
 def initialize():
     # Init chrome driver
     # url = "https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml?request_locale=en"
-    url = "https://www.vndirect.com.vn/portal/thong-tin-co-phieu/nhap-ma-chung-khoan.shtml"
+    url = "https://www.vndirect.com.vn/portal/thong-tin-co-phieu/nhap-ma-chung-khoan.shtml?request_locale=en_GB"
     options = webdriver.ChromeOptions()
     options.add_argument("--disable-notifications")
     options.add_argument('--no-sandbox')
@@ -79,30 +79,7 @@ def end_page(driver):
         return True
 
 
-def click_next_page(driver, page_no, logger, max_retries=10):
-    # prev_ticker = driver.find_element_by_css_selector(
-    #     '#fSearchSymbol_result > table > tbody > tr:nth-child(1) > td:nth-child(1) > span > a').text
-    # curr_ticker = prev_ticker
-    # retry = 0
-    # while(curr_ticker == prev_ticker and retry <= max_retries):
-    #     elem = driver.find_element_by_css_selector(
-    #         '#fSearchSymbol_paging > div > span.next > a')
-
-    #     driver.execute_script("arguments[0].click();", elem)
-
-    #     curr_ticker = driver.find_element_by_css_selector(
-    #         '#fSearchSymbol_result > table > tbody > tr:nth-child(1) > td:nth-child(1) > span > a').text
-    #     logger.info(f" current: {curr_ticker} - previous: {prev_ticker}")
-    #     retry += 1
-    #     return 0
-    # raise Exception("Cannot click next page")
-
-    # elem = driver.find_element_by_css_selector(
-    #     '#fSearchSymbol_paging > div > span.next > a')
-    # elem = WebDriverWait(driver, 5, 1).until(EC.presence_of_element_located(
-    #     (By.CSS_SELECTOR, '#fSearchSymbol_paging > div > span.next > a')))
-    # driver.execute_script("arguments[0].click();", elem)
-    # driver.implicitly_wait(5)
+def click_next_page(driver, page_no, logger):
     driver.execute_script(
         f"javascript:_goTo('fSearchSymbol_paging',{page_no})")
     time.sleep(2)
@@ -125,14 +102,18 @@ def crawl_ticker(driver, logger):
             with open(f"{config.download_path}/{count}.html", "w") as f:
                 f.write(ticker_table)
 
-            # data_dict = {}
-            # source = BeautifulSoup(price_table, "html.parser")
+            data_dict = {}
+            source = BeautifulSoup(ticker_table, "html.parser")
 
-            # # Parsing date
-            # days = [datetime.strptime(x.get_text().strip(), "%Y-%m-%d")
-            #         for x in source.select("li div.row-time.noline")[1:]]
-            # data_dict["ticker_code"] = [ticker_code for x in range(len(days))]
-            # data_dict["date"] = days
+            # Parsing ticker info
+            tickers = [x.get_text().strip()
+                       for x in source.select("tbody tr td span")]
+
+            data_dict["ticker_code"] = tickers[0::5]
+            data_dict["company_name"] = tickers[1::5]
+            data_dict["company_full_name"] = tickers[2::5]
+            data_dict["sector"] = tickers[3::5]
+            data_dict["exchange"] = tickers[4::5]
 
             # # Parsing prices
             # prices = [(float(x.get_text().strip()) if is_number(x.get_text().strip(
