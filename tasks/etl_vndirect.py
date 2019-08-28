@@ -99,8 +99,8 @@ def crawl_ticker(driver, logger):
                 "#fSearchSymbol_result")
             ticker_table = elem.get_attribute("innerHTML")
 
-            with open(f"{config.download_path}/{count}.html", "w") as f:
-                f.write(ticker_table)
+            # with open(f"{config.download_path}/{count}.html", "w") as f:
+            #     f.write(ticker_table)
 
             data_dict = {}
             source = BeautifulSoup(ticker_table, "html.parser")
@@ -115,24 +115,8 @@ def crawl_ticker(driver, logger):
             data_dict["sector"] = tickers[3::5]
             data_dict["exchange"] = tickers[4::5]
 
-            # # Parsing prices
-            # prices = [(float(x.get_text().strip()) if is_number(x.get_text().strip(
-            # )) else x.get_text().strip()) for x in source.select("li div.row1")]
-            # data_dict["open"] = prices[6::6]
-            # data_dict["highest"] = prices[7::6]
-            # data_dict["lowest"] = prices[8::6]
-            # data_dict["close"] = prices[9::6]
-            # data_dict["average"] = prices[10::6]
-            # data_dict["adjusted"] = prices[11::6]
-
-            # # Parsing volume
-            # volumes = [((float(x.get_text().strip())) if is_number(
-            #     x.get_text().strip()) else None) for x in source.select("li div.row3")[2:]]
-            # data_dict["trading_volume"] = volumes[0::2]
-            # data_dict["put_through_volume"] = volumes[1::2]
-
-            # df = pd.DataFrame(data_dict)
-            # df.to_csv(f"{config.download_path}/{ticker_code}.csv", index=None)
+            df = pd.DataFrame(data_dict)
+            df.to_csv(f"{config.download_path}/{count}.csv", index=None)
 
             logger.info(f"Page {count} completed.")
             count += 1
