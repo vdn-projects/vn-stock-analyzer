@@ -118,6 +118,17 @@ def crawl_ticker(driver, logger):
             df = pd.DataFrame(data_dict)
             df.to_csv(f"{config.download_path}/{count}.csv", index=None)
 
+            with psycopg2.connect(config.conn_string) as conn:
+                conn.set_session(autocommit=True)
+                with conn.cursor() as cur:
+                    for _, row in df.iterrows():
+                        try:
+                            cur.execute(
+                                sql_queries.upsert_ticker_table, row.to_list())
+                        except Exception as ex:
+                            logger.error(row["ticker_code"] + " | " +
+                                         traceback.format_exc())
+
             logger.info(f"Page {count} completed.")
             count += 1
             click_next_page(driver, count, logger)

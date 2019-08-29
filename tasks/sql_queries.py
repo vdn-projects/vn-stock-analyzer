@@ -13,22 +13,26 @@ DROP TABLE IF EXISTS historical_price
 ticker_table_create = """
 CREATE TABLE IF NOT EXISTS ticker(
     ticker_code varchar(20),
-    company_name varchar(250) NULL,
-    field varchar(100) NULL,
-    stock_exchange varchar(100) NULL,
+    company_name varchar(500) NULL,
+    company_full_name varchar(1000) NULL,
+    sector varchar(1000) NULL,
+    exchange varchar(500) NULL,
     CONSTRAINT ticker_tickercode_pkey PRIMARY KEY(ticker_code)
 )
 """
 
 historical_price_table_create = """
 CREATE TABLE IF NOT EXISTS historical_price(
-    date date NOT NULL,
-    close float NOT NULL,
     ticker_code varchar(20) NOT NULL,
+    date date NOT NULL,
     open float NOT NULL,
-    high float NOT NULL,
-    low float NOT NULL,
-    volume int NOT NULL,
+    highest float NOT NULL,
+    lowest float NOT NULL,
+    close float NOT NULL,
+    average float NOT NULL,
+    adjusted float NOT NULL,
+    trading_volume float NOT NULL,
+    put_through_volume float NOT NULL,
     CONSTRAINT historical_ticker_code_fkey FOREIGN KEY(ticker_code) REFERENCES ticker(ticker_code),
     CONSTRAINT historical_price_key UNIQUE(date, ticker_code)
 )
@@ -36,19 +40,18 @@ CREATE TABLE IF NOT EXISTS historical_price(
 
 # Upsert data
 upsert_ticker_table = """
-INSERT INTO ticker(ticker_code, company_name, field, stock_exchange)
-VALUES(%s, %s, %s, %s)
-ON CONFLICT ON CONSTRAINT ticker_tickercode_pkey DO
-UPDATE SET
-company_name = %s, field = %s, stock_exchange = %s
+INSERT INTO ticker(ticker_code, company_name, company_full_name, sector, exchange)
+VALUES(%s, %s, %s, %s, %s)
+ON CONFLICT ON CONSTRAINT ticker_tickercode_pkey
+DO NOTHING
 """
 
+# The price presented fixed by date, no update required
 upsert_historical_price_table = """
-INSERT INTO historical_price(date, close, ticker_code, open, high, low, volume)
+INSERT INTO historical_price(ticker_code, date, open, highest, lowest, close, average, adjusted, trading_volume, put_through_volume)
 VALUES(%s, %s, %s, %s, %s, %s, %s)
-ON CONFLICT ON CONSTRAINT historical_price_key DO
-UPDATE SET
-close = %s, open = %s, high = %s, low = %s, volume = %s
+ON CONFLICT ON CONSTRAINT historical_price_key 
+DO NOTHING
 """
 
 # Select statement

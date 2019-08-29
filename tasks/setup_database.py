@@ -14,7 +14,7 @@ def create_database():
     """
     # Connect to default database with presetup user
     conn = psycopg2.connect(
-        f"host=127.0.0.1 dbname=postgres user={config.db_username} password={config.db_psw}")
+        f"host=vietnam_stock dbname=postgres user={config.db_username} password={config.db_psw}")
     conn.set_session(autocommit=True)
     cur = conn.cursor()
 
@@ -108,16 +108,16 @@ def main():
     drop_tables(cur, conn)
     create_tables(cur, conn)
 
-    # Inital load for ticker table
-    initial_load_ticker(
-        "./data/initial_load/ticker/ticker_list.csv", cur, conn)
+    # # Inital load for ticker table
+    # initial_load_ticker(
+    #     "./data/initial_load/ticker/ticker_list.csv", cur, conn)
 
-    # Initial load for historical price table
-    file_path_list = []
-    for root, dirs, files in os.walk(config.initial_load_path):
-        file_path_list = glob.glob(os.path.join(root, "*"))
+    # # Initial load for historical price table
+    # file_path_list = []
+    # for root, dirs, files in os.walk(config.initial_load_path):
+    #     file_path_list = glob.glob(os.path.join(root, "*"))
 
-    initial_load_historical_price(file_path_list, cur, conn)
+    # initial_load_historical_price(file_path_list, cur, conn)
 
     conn.close()
 
