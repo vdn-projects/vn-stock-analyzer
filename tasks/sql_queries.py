@@ -25,14 +25,14 @@ historical_price_table_create = """
 CREATE TABLE IF NOT EXISTS historical_price(
     ticker_code varchar(20) NOT NULL,
     date date NOT NULL,
-    open float NOT NULL,
-    highest float NOT NULL,
-    lowest float NOT NULL,
-    close float NOT NULL,
-    average float NOT NULL,
-    adjusted float NOT NULL,
-    trading_volume float NOT NULL,
-    put_through_volume float NOT NULL,
+    open float NULL,
+    highest float NULL,
+    lowest float NULL,
+    close float NULL,
+    average float NULL,
+    adjusted float NULL,
+    trading_volume NUMERIC(12,0) NULL,
+    put_through_volume NUMERIC(12,0) NULL,
     CONSTRAINT historical_ticker_code_fkey FOREIGN KEY(ticker_code) REFERENCES ticker(ticker_code),
     CONSTRAINT historical_price_key UNIQUE(date, ticker_code)
 )
@@ -49,7 +49,7 @@ DO NOTHING
 # The price presented fixed by date, no update required
 upsert_historical_price_table = """
 INSERT INTO historical_price(ticker_code, date, open, highest, lowest, close, average, adjusted, trading_volume, put_through_volume)
-VALUES(%s, %s, %s, %s, %s, %s, %s)
+VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT ON CONSTRAINT historical_price_key 
 DO NOTHING
 """
