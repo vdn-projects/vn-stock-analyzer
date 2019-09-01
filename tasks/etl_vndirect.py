@@ -18,10 +18,27 @@ import pandas as pd
 import tasks.config as config
 import tasks.sql_queries as sql_queries
 
+url_price = "https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml?request_locale=en"
+url_ticker = "https://www.vndirect.com.vn/portal/thong-tin-co-phieu/nhap-ma-chung-khoan.shtml?request_locale=en_GB"
+
 
 def is_number(s):
     """ Returns True is string is a number. """
-    return s.replace('.', '', 1).isdigit()
+    return (s.replace('.', '', 1).isdigit())
+
+
+def remove_dot(s):
+    print(s)
+    print("\n" + s.replace('.', ''))
+    return s.replace('.', '')
+
+
+def remove_comma(s):
+    return s.replace(',', '')
+
+
+def replace_comma_by_dot(s):
+    return s.replace(',', '.')
 
 
 def get_logger(log_path, max_bytes=1000):
@@ -33,10 +50,8 @@ def delete_files(path, wildcard):
         os.remove(file)
 
 
-def initialize():
+def initialize(url):
     # Init chrome driver
-    # url = "https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml?request_locale=en"
-    url = "https://www.vndirect.com.vn/portal/thong-tin-co-phieu/nhap-ma-chung-khoan.shtml?request_locale=en_GB"
     options = webdriver.ChromeOptions()
     options.add_argument("--disable-notifications")
     options.add_argument('--no-sandbox')
@@ -68,6 +83,21 @@ def refresh_ticker_page(driver, max_retries=10):
         except Exception as ex:
             retry += 1
     raise Exception("Cannot load ticker table")
+
+
+def refresh_price_page(driver, max_retries=5):
+    retry = 0
+    while(retry <= max_retries):
+        try:
+            elem = driver.find_element_by_css_selector(
+                '#fHistoricalPrice_View')
+            elem.click()
+            WebDriverWait(driver, 5, 1).until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, '#tab-1 > div.box_content_tktt > ul > li:nth-child(2) > div.row2 > span')))
+            return 1
+        except Exception as ex:
+            retry += 1
+    raise Exception("Cannot load price table")
 
 
 def end_page(driver):
@@ -136,6 +166,121 @@ def crawl_ticker(driver, logger):
         logger.error(f"Page{count} | " + traceback.format_exc())
 
 
+def click_next_price(driver, page_no, ticker_code, from_date, to_date, logger, max_retries=3):
+    retry = 0
+    while(retry < max_retries):
+        try:
+            # Check if the next button is availale
+            # WebDriverWait(driver, 5, 1).until(EC.presence_of_element_located(
+            #     (By.CSS_SELECTOR, '#tab-1 > div.paging > span:nth-child(2) > a')))
+
+            # Click next page
+            driver.execute_script(
+                f"javascript:_goTo({page_no})")
+            time.sleep(2)
+            return True
+        except Exception as ex:  # Not found the next button
+            retry += 1
+            print("retry# " + str(retry))
+            input_price_params(driver, ticker_code, from_date, to_date, logger)
+    return False
+
+
+def load_price(driver, ticker_code, logger):
+    elem = driver.find_element_by_css_selector(
+        "#tab-1 > div.box_content_tktt > ul")
+    price_table = elem.get_attribute("innerHTML")
+
+    data_dict = {}
+    source = BeautifulSoup(price_table, "html.parser")
+
+    # Parsing date
+    days = [datetime.strptime(x.get_text().strip(), "%Y-%m-%d")
+            for x in source.select("li div.row-time.noline")[1:]]
+    data_dict["ticker_code"] = [ticker_code for x in range(len(days))]
+    data_dict["date"] = days
+
+    # Parsing prices
+    prices = [(float(remove_comma(x.get_text().strip())) if is_number(x.get_text().strip(
+    )) else x.get_text().strip()) for x in source.select("li div.row1")]
+    data_dict["open"] = prices[6::6]
+    data_dict["highest"] = prices[7::6]
+    data_dict["lowest"] = prices[8::6]
+    data_dict["close"] = prices[9::6]
+    data_dict["average"] = prices[10::6]
+    data_dict["adjusted"] = prices[11::6]
+
+    # Parsing volume
+    volumes = [(int(float((x.get_text().strip()))) if is_number(
+        (x.get_text().strip())) else None) for x in source.select("li div.row3")[2:]]
+    data_dict["trading_volume"] = volumes[0::2]
+
+    data_dict["put_through_volume"] = volumes[1::2]
+
+    df = pd.DataFrame(data_dict)
+    df = df.where(df.notna(), None)
+
+    df.to_csv(f"{config.download_path}/{ticker_code}.csv", index=None)
+
+    with psycopg2.connect(config.conn_string) as conn:
+        conn.set_session(autocommit=True)
+        with conn.cursor() as cur:
+            for _, row in df.iterrows():
+                try:
+                    cur.execute(
+                        sql_queries.upsert_historical_price_table, row.to_list())
+                except Exception as ex:
+                    logger.error(row["ticker_code"] + " | " +
+                                 traceback.format_exc())
+
+
+def input_price_params(driver, ticker_code, from_date, to_date, logger):
+    try:
+        # Refresh the page again to reload resources
+        driver.refresh()
+
+        # Input ticker code
+        elem = driver.find_element_by_css_selector('#symbolID')
+        elem.send_keys(ticker_code)
+
+        # Input time from
+        elem = driver.find_element_by_css_selector(
+            '#fHistoricalPrice_FromDate')
+        elem.send_keys(from_date)
+
+        # Input time to
+        elem = driver.find_element_by_css_selector('#fHistoricalPrice_ToDate')
+        elem.send_keys(to_date)
+
+        # View historical price list
+        elem = driver.find_element_by_css_selector('#fHistoricalPrice_View')
+        elem.click()
+
+        # Wait until the table appear, over 10 seconds it will dismiss this ticker code and iterate for other one
+        # WebDriverWait(driver, 5, 1).until(
+        #     EC.presence_of_element_located((By.CSS_SELECTOR, '#tab-1 > div.box_content_tktt > ul > li:nth-child(2) > div.row2 > span')))
+
+        refresh_price_page(driver)
+
+    except Exception as ex:
+        logger.error(traceback.print_exc())
+
+
+def crawl_price(driver, ticker_code, from_date, to_date, logger):
+    try:
+        input_price_params(driver, ticker_code, from_date, to_date, logger)
+        load_price(driver, ticker_code, logger)
+        page_no = 2
+        # If there is only 1 price page
+        while click_next_price(driver, page_no, ticker_code, from_date, to_date, logger):
+            load_price(driver, ticker_code, logger)
+            page_no += 1
+
+        logger.info(f"Download complete for {ticker_code}.")
+    except Exception as ex:
+        logger.error(ticker_code + " | " + traceback.print_exc())
+
+
 def process(driver, ticker_code, from_date, to_date, logger):
     """
     Selenium task to down load the price list
@@ -159,7 +304,7 @@ def process(driver, ticker_code, from_date, to_date, logger):
         elem.click()
 
         # Wait until the table appear, over 10 seconds it will dismiss this ticker code and iterate for other one
-        WebDriverWait(driver, 10, 1).until(
+        WebDriverWait(driver, 3, 1).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, '#tab-1 > div.box_content_tktt > ul > li:nth-child(2) > div.row2 > span')))
 
         elem = driver.find_element_by_css_selector(
@@ -176,7 +321,7 @@ def process(driver, ticker_code, from_date, to_date, logger):
         data_dict["date"] = days
 
         # Parsing prices
-        prices = [(float(x.get_text().strip()) if is_number(x.get_text().strip(
+        prices = [(float(remove_comma(x.get_text().strip())) if is_number(x.get_text().strip(
         )) else x.get_text().strip()) for x in source.select("li div.row1")]
         data_dict["open"] = prices[6::6]
         data_dict["highest"] = prices[7::6]
@@ -186,13 +331,27 @@ def process(driver, ticker_code, from_date, to_date, logger):
         data_dict["adjusted"] = prices[11::6]
 
         # Parsing volume
-        volumes = [((float(x.get_text().strip())) if is_number(
-            x.get_text().strip()) else None) for x in source.select("li div.row3")[2:]]
+        volumes = [(int(remove_comma(remove_dot(x.get_text().strip()))) if is_number(
+            remove_comma(remove_dot(x.get_text().strip()))) else None) for x in source.select("li div.row3")[2:]]
         data_dict["trading_volume"] = volumes[0::2]
+
         data_dict["put_through_volume"] = volumes[1::2]
 
         df = pd.DataFrame(data_dict)
+        df = df.where(df.notna(), None)
+
         df.to_csv(f"{config.download_path}/{ticker_code}.csv", index=None)
+
+        with psycopg2.connect(config.conn_string) as conn:
+            conn.set_session(autocommit=True)
+            with conn.cursor() as cur:
+                for _, row in df.iterrows():
+                    try:
+                        cur.execute(
+                            sql_queries.upsert_historical_price_table, row.to_list())
+                    except Exception as ex:
+                        logger.error(row["ticker_code"] + " | " +
+                                     traceback.format_exc())
 
         logger.info(f"Download complete for {ticker_code}.")
     except Exception as ex:
@@ -247,6 +406,7 @@ def main(n_days=4):
     """
     Download stock prices of last n days
     """
+
     # Init the logging instance
     logging.basicConfig(filename="./app.log",
                         format="%(asctime)s: %(levelname)s: %(message)s",
@@ -258,8 +418,10 @@ def main(n_days=4):
     time_zone = "Asia/Saigon"
     date_format = "%d/%m/%Y"
 
-    from_date = (datetime.now(timezone(time_zone)) +
-                 timedelta(days=-n_days)).strftime(date_format)
+    # from_date = (datetime.now(timezone(time_zone)) +
+    #              timedelta(days=-n_days)).strftime(date_format)
+
+    from_date = "01/01/2010"
 
     to_date = (datetime.now(timezone(time_zone)) +
                timedelta(days=1)).strftime(date_format)
@@ -271,20 +433,23 @@ def main(n_days=4):
     logging.info("Read list of ticker from database")
 
     tickers = get_tickers()
-    logger.info(f"There are {tickers.shape[0]}")
+    tickers = pd.DataFrame({"ticker_code": ["AAA", "FPT"]})
+    # logger.info(f"There are {tickers.shape[0]}")
 
-    driver = initialize()
-    crawl_ticker(driver, logger)
+    # driver = initialize(url_ticker)
+    # crawl_ticker(driver, logger)
 
-    # for i, ticker in tickers.iterrows():
-    #     try:
-    #         driver = initialize()
-    #         process(driver, ticker.ticker_code, from_date, to_date, logger)
-    #         quit(driver)
-    #     except Exception as ex:
-    #         quit(driver)
-    #         logger.error(ticker.ticker_code + " | " +
-    #                      getattr(ex, 'message', repr(ex)))
+    for _, ticker in tickers.iterrows():
+        try:
+            driver = initialize(url_price)
+            # process(driver, ticker.ticker_code, from_date, to_date, logger)
+            crawl_price(driver, ticker["ticker_code"],
+                        from_date, to_date, logger)
+            quit(driver)
+        except Exception as ex:
+            quit(driver)
+            logger.error(ticker.ticker_code + " | " +
+                         getattr(ex, 'message', repr(ex)))
 
     # Update changes if any into historical price table
     # load_historical_price(config.download_path, logger)
