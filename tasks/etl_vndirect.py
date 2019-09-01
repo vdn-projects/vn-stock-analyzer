@@ -166,23 +166,36 @@ def crawl_ticker(driver, logger):
         logger.error(f"Page{count} | " + traceback.format_exc())
 
 
-def click_next_price(driver, page_no, ticker_code, from_date, to_date, logger, max_retries=3):
+def click_next_price(driver, page_no, ticker_code, from_date, to_date, logger, max_retries=5):
     retry = 0
     while(retry < max_retries):
         try:
-            # Check if the next button is availale
-            # WebDriverWait(driver, 5, 1).until(EC.presence_of_element_located(
-            #     (By.CSS_SELECTOR, '#tab-1 > div.paging > span:nth-child(2) > a')))
+            # Check if the paging is availale
+            element = WebDriverWait(driver, 5, 1).until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, '#tab-1 > div.paging')))
 
-            # Click next page
-            driver.execute_script(
-                f"javascript:_goTo({page_no})")
-            time.sleep(2)
-            return True
+            paging_content = element.text.strip()
+            print(element.text.strip())
+            if(">" in paging_content):
+                # Click next page
+                driver.execute_script(
+                    f"javascript:_goTo({page_no})")
+                time.sleep(2)
+                return True
+            else:
+                return False
+
         except Exception as ex:  # Not found the next button
+            if "javascript error:" in str(ex):
+                logger.error("Not found javascript got to next page")
+            else:
+                logger.error(traceback.print_exc())
+
+            # resources complete download
+            # If the javascript is not found, driver will refresh number of time to have the web
+            driver.refresh()
             retry += 1
-            print("retry# " + str(retry))
-            input_price_params(driver, ticker_code, from_date, to_date, logger)
+            logger.info(f"refresh the page at {retry} try")
     return False
 
 
@@ -256,12 +269,6 @@ def input_price_params(driver, ticker_code, from_date, to_date, logger):
         elem = driver.find_element_by_css_selector('#fHistoricalPrice_View')
         elem.click()
 
-        # Wait until the table appear, over 10 seconds it will dismiss this ticker code and iterate for other one
-        # WebDriverWait(driver, 5, 1).until(
-        #     EC.presence_of_element_located((By.CSS_SELECTOR, '#tab-1 > div.box_content_tktt > ul > li:nth-child(2) > div.row2 > span')))
-
-        refresh_price_page(driver)
-
     except Exception as ex:
         logger.error(traceback.print_exc())
 
@@ -285,7 +292,6 @@ def process(driver, ticker_code, from_date, to_date, logger):
     """
     Selenium task to down load the price list
     """
-
     # Input ticker code
     elem = driver.find_element_by_css_selector('#symbolID')
     elem.send_keys(ticker_code)
