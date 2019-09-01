@@ -27,18 +27,12 @@ def is_number(s):
     return (s.replace('.', '', 1).isdigit())
 
 
-def remove_dot(s):
-    print(s)
-    print("\n" + s.replace('.', ''))
-    return s.replace('.', '')
+def replace_comma(s):
+    return s.replace(',', '.')
 
 
 def remove_comma(s):
     return s.replace(',', '')
-
-
-def replace_comma_by_dot(s):
-    return s.replace(',', '.')
 
 
 def get_logger(log_path, max_bytes=1000):
@@ -85,26 +79,15 @@ def refresh_ticker_page(driver, max_retries=10):
     raise Exception("Cannot load ticker table")
 
 
-def refresh_price_page(driver, max_retries=5):
-    retry = 0
-    while(retry <= max_retries):
-        try:
-            elem = driver.find_element_by_css_selector(
-                '#fHistoricalPrice_View')
-            elem.click()
-            WebDriverWait(driver, 5, 1).until(EC.presence_of_element_located(
-                (By.CSS_SELECTOR, '#tab-1 > div.box_content_tktt > ul > li:nth-child(2) > div.row2 > span')))
-            return 1
-        except Exception as ex:
-            retry += 1
-    raise Exception("Cannot load price table")
-
-
 def end_page(driver):
     try:
-        WebDriverWait(driver, 5, 1).until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, '#fSearchSymbol_paging > div > span.next > a')))
-        return False
+        element = WebDriverWait(driver, 5, 1).until(EC.presence_of_element_located(
+            (By.CSS_SELECTOR, '#fSearchSymbol_paging > div')))
+        print(element.text.strip())
+        if(">" in element.text.strip()):
+            return False
+        else:
+            return True
     except Exception as ex:  # Not found the next button
         return True
 
@@ -166,7 +149,7 @@ def crawl_ticker(driver, logger):
         logger.error(f"Page{count} | " + traceback.format_exc())
 
 
-def click_next_price(driver, page_no, ticker_code, from_date, to_date, logger, max_retries=5):
+def click_next_price(driver, page_no, logger, max_retries=10):
     retry = 0
     while(retry < max_retries):
         try:
@@ -187,13 +170,14 @@ def click_next_price(driver, page_no, ticker_code, from_date, to_date, logger, m
 
         except Exception as ex:  # Not found the next button
             if "javascript error:" in str(ex):
-                logger.error("Not found javascript got to next page")
+                logger.error("Not found javascript goto next page")
             else:
                 logger.error(traceback.print_exc())
 
             # resources complete download
             # If the javascript is not found, driver will refresh number of time to have the web
             driver.refresh()
+            time.sleep(2)
             retry += 1
             logger.info(f"refresh the page at {retry} try")
     return False
@@ -214,8 +198,8 @@ def load_price(driver, ticker_code, logger):
     data_dict["date"] = days
 
     # Parsing prices
-    prices = [(float(remove_comma(x.get_text().strip())) if is_number(x.get_text().strip(
-    )) else x.get_text().strip()) for x in source.select("li div.row1")]
+    prices = [(float(replace_comma(x.get_text().strip())) if is_number(remove_comma(x.get_text().strip(
+    ))) else x.get_text().strip()) for x in source.select("li div.row1")]
     data_dict["open"] = prices[6::6]
     data_dict["highest"] = prices[7::6]
     data_dict["lowest"] = prices[8::6]
@@ -227,7 +211,6 @@ def load_price(driver, ticker_code, logger):
     volumes = [(int(float((x.get_text().strip()))) if is_number(
         (x.get_text().strip())) else None) for x in source.select("li div.row3")[2:]]
     data_dict["trading_volume"] = volumes[0::2]
-
     data_dict["put_through_volume"] = volumes[1::2]
 
     df = pd.DataFrame(data_dict)
@@ -244,7 +227,7 @@ def load_price(driver, ticker_code, logger):
                         sql_queries.upsert_historical_price_table, row.to_list())
                 except Exception as ex:
                     logger.error(row["ticker_code"] + " | " +
-                                 traceback.format_exc())
+                                 traceback.print_exc())
 
 
 def input_price_params(driver, ticker_code, from_date, to_date, logger):
@@ -275,93 +258,21 @@ def input_price_params(driver, ticker_code, from_date, to_date, logger):
 
 def crawl_price(driver, ticker_code, from_date, to_date, logger):
     try:
+        logger.info(f"Crawling {ticker_code} from {from_date} to {to_date}.")
         input_price_params(driver, ticker_code, from_date, to_date, logger)
         load_price(driver, ticker_code, logger)
+
+        # Start checking if paging is available, then continue load more data
         page_no = 2
-        # If there is only 1 price page
-        while click_next_price(driver, page_no, ticker_code, from_date, to_date, logger):
+        while click_next_price(driver, page_no, logger):
+            logger.info(f"Load price on page {page_no}.")
             load_price(driver, ticker_code, logger)
             page_no += 1
 
-        logger.info(f"Download complete for {ticker_code}.")
+        logger.info(
+            f"Complete crawling {ticker_code} from {from_date} to {to_date}.")
     except Exception as ex:
         logger.error(ticker_code + " | " + traceback.print_exc())
-
-
-def process(driver, ticker_code, from_date, to_date, logger):
-    """
-    Selenium task to down load the price list
-    """
-    # Input ticker code
-    elem = driver.find_element_by_css_selector('#symbolID')
-    elem.send_keys(ticker_code)
-
-    # Input time from
-    elem = driver.find_element_by_css_selector('#fHistoricalPrice_FromDate')
-    elem.send_keys(from_date)
-
-    # Input time to
-    elem = driver.find_element_by_css_selector('#fHistoricalPrice_ToDate')
-    elem.send_keys(to_date)
-
-    try:
-        # View historical price list
-        elem = driver.find_element_by_css_selector('#fHistoricalPrice_View')
-        elem.click()
-
-        # Wait until the table appear, over 10 seconds it will dismiss this ticker code and iterate for other one
-        WebDriverWait(driver, 3, 1).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, '#tab-1 > div.box_content_tktt > ul > li:nth-child(2) > div.row2 > span')))
-
-        elem = driver.find_element_by_css_selector(
-            "#tab-1 > div.box_content_tktt > ul")
-        price_table = elem.get_attribute("innerHTML")
-
-        data_dict = {}
-        source = BeautifulSoup(price_table, "html.parser")
-
-        # Parsing date
-        days = [datetime.strptime(x.get_text().strip(), "%Y-%m-%d")
-                for x in source.select("li div.row-time.noline")[1:]]
-        data_dict["ticker_code"] = [ticker_code for x in range(len(days))]
-        data_dict["date"] = days
-
-        # Parsing prices
-        prices = [(float(remove_comma(x.get_text().strip())) if is_number(x.get_text().strip(
-        )) else x.get_text().strip()) for x in source.select("li div.row1")]
-        data_dict["open"] = prices[6::6]
-        data_dict["highest"] = prices[7::6]
-        data_dict["lowest"] = prices[8::6]
-        data_dict["close"] = prices[9::6]
-        data_dict["average"] = prices[10::6]
-        data_dict["adjusted"] = prices[11::6]
-
-        # Parsing volume
-        volumes = [(int(remove_comma(remove_dot(x.get_text().strip()))) if is_number(
-            remove_comma(remove_dot(x.get_text().strip()))) else None) for x in source.select("li div.row3")[2:]]
-        data_dict["trading_volume"] = volumes[0::2]
-
-        data_dict["put_through_volume"] = volumes[1::2]
-
-        df = pd.DataFrame(data_dict)
-        df = df.where(df.notna(), None)
-
-        df.to_csv(f"{config.download_path}/{ticker_code}.csv", index=None)
-
-        with psycopg2.connect(config.conn_string) as conn:
-            conn.set_session(autocommit=True)
-            with conn.cursor() as cur:
-                for _, row in df.iterrows():
-                    try:
-                        cur.execute(
-                            sql_queries.upsert_historical_price_table, row.to_list())
-                    except Exception as ex:
-                        logger.error(row["ticker_code"] + " | " +
-                                     traceback.format_exc())
-
-        logger.info(f"Download complete for {ticker_code}.")
-    except Exception as ex:
-        logger.error(ticker_code + " | " + getattr(ex, 'message', repr(ex)))
 
 
 def quit(driver):
@@ -375,37 +286,6 @@ def get_tickers():
         conn.set_session(autocommit=True)
         with conn.cursor() as cur:
             return pd.read_sql_query(sql_queries.get_ticker_list, conn)
-
-
-def load_historical_price(download_path, logger):
-    file_path_list = []
-    for root, dirs, files in os.walk(download_path):
-        file_path_list = glob.glob(os.path.join(root, "*"))
-
-    with psycopg2.connect(config.conn_string) as conn:
-        conn.set_session(autocommit=True)
-        with conn.cursor() as cur:
-            for file_path in file_path_list:
-                prices = pd.read_csv(file_path)
-                for i, price in prices.iterrows():
-                    try:
-                        date = datetime.strptime(
-                            price.DATE.strip(), "%d/%m/%Y")
-                        close = float(price.CLOSE)
-                        ticker = price.TICKER.strip()
-                        open = float(price.OPEN)
-                        high = float(price.HIGH)
-                        low = float(price.LOW)
-                        volume = int(price.VOLUME)
-
-                        cur.execute(
-                            sql_queries.upsert_historical_price_table,
-                            (date, close, ticker, open, high, low,
-                             volume, close, open, high, low, volume)
-                        )
-                    except Exception as ex:
-                        logger.error(price.TICKER + " | " +
-                                     getattr(ex, "message", repr(ex)))
 
 
 def main(n_days=4):
@@ -439,12 +319,19 @@ def main(n_days=4):
     logging.info("Read list of ticker from database")
 
     tickers = get_tickers()
-    tickers = pd.DataFrame({"ticker_code": ["AAA", "FPT"]})
-    # logger.info(f"There are {tickers.shape[0]}")
+    # tickers = pd.DataFrame({"ticker_code": ["AAA", "FPT"]})
+    logger.info(f"There are {tickers.shape[0]}")
 
-    # driver = initialize(url_ticker)
-    # crawl_ticker(driver, logger)
+    # Crawl ticker dictionary
+    try:
+        driver = initialize(url_ticker)
+        crawl_ticker(driver, logger)
+        quit(driver)
+    except Exception as ex:
+        quit(driver)
+        logger.error(traceback.print_exc())
 
+    # Crawl historical price
     for _, ticker in tickers.iterrows():
         try:
             driver = initialize(url_price)
@@ -454,16 +341,10 @@ def main(n_days=4):
             quit(driver)
         except Exception as ex:
             quit(driver)
-            logger.error(ticker.ticker_code + " | " +
-                         getattr(ex, 'message', repr(ex)))
-
-    # Update changes if any into historical price table
-    # load_historical_price(config.download_path, logger)
-
-    # Clean csv remaing if any after download
-    # delete_files(config.download_path, "*.csv")
+            logger.error(ticker["ticker_code"] + " | " + traceback.print_exc())
 
 
 if __name__ == "__main__":
     logging.info("Program starts ...")
     main()
+    logging.info("Program finished! ...")
