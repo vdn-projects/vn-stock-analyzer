@@ -15,8 +15,8 @@ from selenium.webdriver.common.by import By
 import psycopg2
 import pandas as pd
 
-import tasks.config as config
-import tasks.sql_queries as sql_queries
+import vn_stock.tasks.config as config
+import vn_stock.tasks.sql_queries as sql_queries
 
 url_price = "https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml?request_locale=en"
 url_ticker = "https://www.vndirect.com.vn/portal/thong-tin-co-phieu/nhap-ma-chung-khoan.shtml?request_locale=en_GB"
@@ -129,7 +129,7 @@ def crawl_ticker(driver, logger):
             data_dict["exchange"] = tickers[4::5]
 
             df = pd.DataFrame(data_dict)
-            df.to_csv(f"{config.download_path}/{count}.csv", index=None)
+            # df.to_csv(f"{config.download_path}/{count}.csv", index=None)
 
             with psycopg2.connect(config.conn_string) as conn:
                 conn.set_session(autocommit=True)
@@ -149,7 +149,7 @@ def crawl_ticker(driver, logger):
         logger.error(f"Page{count} | " + traceback.format_exc())
 
 
-def click_next_price(driver, page_no, logger, max_retries=10):
+def click_next_price(driver, page_no, logger, max_retries=15):
     retry = 0
     while(retry < max_retries):
         try:
@@ -183,7 +183,7 @@ def click_next_price(driver, page_no, logger, max_retries=10):
     return False
 
 
-def load_price(driver, ticker_code, logger):
+def load_price(driver, ticker_code, logger, mode="first_load"):
     elem = driver.find_element_by_css_selector(
         "#tab-1 > div.box_content_tktt > ul")
     price_table = elem.get_attribute("innerHTML")
@@ -216,18 +216,31 @@ def load_price(driver, ticker_code, logger):
     df = pd.DataFrame(data_dict)
     df = df.where(df.notna(), None)
 
-    df.to_csv(f"{config.download_path}/{ticker_code}.csv", index=None)
+    # df.to_csv(f"{config.download_path}/{ticker_code}.csv", index=None)
 
-    with psycopg2.connect(config.conn_string) as conn:
-        conn.set_session(autocommit=True)
-        with conn.cursor() as cur:
-            for _, row in df.iterrows():
+    if mode == "incremental_load":
+        with psycopg2.connect(config.conn_string) as conn:
+            conn.set_session(autocommit=True)
+            with conn.cursor() as cur:
+                for _, row in df.iterrows():
+                    try:
+                        cur.execute(
+                            sql_queries.upsert_historical_price_table, row.to_list())
+                    except Exception as ex:
+                        logger.error(row["ticker_code"] + " | " +
+                                     traceback.print_exc())
+    elif mode == "first_load":
+        with psycopg2.connect(config.conn_string) as conn:
+            conn.set_session(autocommit=True)
+            with conn.cursor() as cur:
                 try:
-                    cur.execute(
-                        sql_queries.upsert_historical_price_table, row.to_list())
+                    cur.executemany(
+                        sql_queries.insert_historical_price_table, [tuple(x) for x in df.values.tolist()])
                 except Exception as ex:
                     logger.error(row["ticker_code"] + " | " +
                                  traceback.print_exc())
+    else:
+        raise Exception("The working mode is not defined!")
 
 
 def input_price_params(driver, ticker_code, from_date, to_date, logger):
@@ -323,13 +336,13 @@ def main(n_days=4):
     logger.info(f"There are {tickers.shape[0]}")
 
     # Crawl ticker dictionary
-    try:
-        driver = initialize(url_ticker)
-        crawl_ticker(driver, logger)
-        quit(driver)
-    except Exception as ex:
-        quit(driver)
-        logger.error(traceback.print_exc())
+    # try:
+    #     driver = initialize(url_ticker)
+    #     crawl_ticker(driver, logger)
+    #     quit(driver)
+    # except Exception as ex:
+    #     quit(driver)
+    #     logger.error(traceback.print_exc())
 
     # Crawl historical price
     for _, ticker in tickers.iterrows():
@@ -342,6 +355,9 @@ def main(n_days=4):
         except Exception as ex:
             quit(driver)
             logger.error(ticker["ticker_code"] + " | " + traceback.print_exc())
+
+    # Clean files remaning
+    delete_files(config.download_path, "*.*")
 
 
 if __name__ == "__main__":
