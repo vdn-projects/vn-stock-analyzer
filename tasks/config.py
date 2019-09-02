@@ -9,3 +9,6 @@ conn_string = f"host=vietnam_stock dbname=vietnam_stock user={db_username} passw
 download_path = os.path.join(
     os.getcwd(), "dags/vn_stock/tasks/data/download")  # os.getcwd()
 initial_load_path = "./data/initial_load"
+
+
+url_ticker = "https://www.vndirect.com.vn/portal/thong-tin-co-phieu/nhap-ma-chung-khoan.shtml?request_locale=en_GB"

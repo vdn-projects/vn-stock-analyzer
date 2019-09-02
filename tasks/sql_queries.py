@@ -54,12 +54,6 @@ ON CONFLICT ON CONSTRAINT historical_price_key
 DO NOTHING
 """
 
-# The price presented fixed by date, no update required
-insert_historical_price_table = """
-INSERT INTO historical_price(ticker_code, date, open, highest, lowest, close, average, adjusted, trading_volume, put_through_volume)
-VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-"""
-
 # Select statement
 get_ticker_list = """
 SELECT ticker_code FROM ticker
