@@ -3,8 +3,8 @@ import glob
 from datetime import datetime
 import psycopg2
 import pandas as pd
-from sql_queries import drop_table_queries, create_table_queries, upsert_ticker_table, upsert_historical_price_table
-import config
+from sql_queries import drop_table_queries, create_table_queries
+import config as config
 
 
 def create_database():
@@ -14,7 +14,7 @@ def create_database():
     """
     # Connect to default database with presetup user
     conn = psycopg2.connect(
-        f"host=vietnam_stock dbname=postgres user={config.db_username} password={config.db_psw}")
+        f"host=167.99.68.250 dbname=postgres user={config.db_username} password={config.db_psw}")
     conn.set_session(autocommit=True)
     cur = conn.cursor()
 
@@ -50,55 +50,55 @@ def create_tables(cur, conn):
         cur.execute(query)
 
 
-def initial_load_ticker(file_path, cur, conn):
-    tickers = pd.read_csv(file_path)
-    for i, ticker in tickers.iterrows():
-        cur.execute(
-            upsert_ticker_table,
-            (
-                ticker.ticker_code,
-                ticker.company_name,
-                None,
-                ticker.stock_exchange,
-                ticker.company_name,
-                None,
-                ticker.stock_exchange
-            )
-        )
+# def initial_load_ticker(file_path, cur, conn):
+#     tickers = pd.read_csv(file_path)
+#     for i, ticker in tickers.iterrows():
+#         cur.execute(
+#             upsert_ticker_table,
+#             (
+#                 ticker.ticker_code,
+#                 ticker.company_name,
+#                 None,
+#                 ticker.stock_exchange,
+#                 ticker.company_name,
+#                 None,
+#                 ticker.stock_exchange
+#             )
+#         )
 
 
-def initial_load_historical_price(file_path_list, cur, conn):
-    for file_path in file_path_list:
-        prices = pd.read_csv(file_path)
-        for i, price in prices.iterrows():
-            try:
-                date = datetime.strptime(price.DATE.strip(), "%d/%m/%Y")
-                close = float(price.CLOSE)
-                ticker = price.TICKER.strip()
-                open = float(price.OPEN)
-                high = float(price.HIGH)
-                low = float(price.LOW)
-                volume = int(price.VOLUME)
+# def initial_load_historical_price(file_path_list, cur, conn):
+#     for file_path in file_path_list:
+#         prices = pd.read_csv(file_path)
+#         for i, price in prices.iterrows():
+#             try:
+#                 date = datetime.strptime(price.DATE.strip(), "%d/%m/%Y")
+#                 close = float(price.CLOSE)
+#                 ticker = price.TICKER.strip()
+#                 open = float(price.OPEN)
+#                 high = float(price.HIGH)
+#                 low = float(price.LOW)
+#                 volume = int(price.VOLUME)
 
-                cur.execute(
-                    upsert_historical_price_table,
-                    (
-                        date,
-                        close,
-                        ticker,
-                        open,
-                        high,
-                        low,
-                        volume,
-                        close,
-                        open,
-                        high,
-                        low,
-                        volume
-                    )
-                )
-            except Exception as ex:
-                print(getattr(ex, "message", repr(ex)))
+#                 cur.execute(
+#                     upsert_historical_price_table,
+#                     (
+#                         date,
+#                         close,
+#                         ticker,
+#                         open,
+#                         high,
+#                         low,
+#                         volume,
+#                         close,
+#                         open,
+#                         high,
+#                         low,
+#                         volume
+#                     )
+#                 )
+#             except Exception as ex:
+#                 print(getattr(ex, "message", repr(ex)))
 
 
 def main():

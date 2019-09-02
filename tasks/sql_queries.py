@@ -38,30 +38,7 @@ CREATE TABLE IF NOT EXISTS historical_price(
 )
 """
 
-# Upsert data
-upsert_ticker_table = """
-INSERT INTO ticker(ticker_code, company_name, company_full_name, sector, exchange)
-VALUES(%s, %s, %s, %s, %s)
-ON CONFLICT ON CONSTRAINT ticker_tickercode_pkey
-DO NOTHING
-"""
-
-# The price presented fixed by date, no update required
-upsert_historical_price_table = """
-INSERT INTO historical_price(ticker_code, date, open, highest, lowest, close, average, adjusted, trading_volume, put_through_volume)
-VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-ON CONFLICT ON CONSTRAINT historical_price_key 
-DO NOTHING
-"""
-
-# Select statement
-get_ticker_list = """
-SELECT ticker_code FROM ticker
-"""
-
 
 create_table_queries = [ticker_table_create, historical_price_table_create]
 
 drop_table_queries = [ticker_table_drop, historical_price_table_drop]
-
-upsert_table_queries = [upsert_ticker_table, upsert_historical_price_table]
