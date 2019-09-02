@@ -26,15 +26,8 @@ default_args = {
     'email_on_retry': False
 }
 
-dag = DAG('sparkify_dag',
 
-
-
-          max_active_runs=3
-          )
-
-
-def hello_world():
+def dummy_for_test():
     logging.info("Hello World")
 
 
@@ -52,8 +45,7 @@ end_operator = DummyOperator(task_id='end_execution',  dag=dag)
 
 ticker_ingestion = PythonOperator(
     task_id="ticker_ingestion",
-    # python_callable=crawl_ticker.execute_etl,
-    python_callable=hello_world,
+    python_callable=crawl_ticker.execute_etl,
     dag=dag)
 
 price_ingestion_list = []
