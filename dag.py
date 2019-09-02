@@ -33,8 +33,8 @@ end_operator = DummyOperator(task_id='end_execution',  dag=dag)
 
 ticker_ingestion = PythonOperator(
     task_id="ticker_ingestion",
-    python_callable=crawl_ticker.execute_etl,
-    # python_callable=hello_world,
+    # python_callable=crawl_ticker.execute_etl,
+    python_callable=hello_world,
     dag=dag)
 
 price_ingestion_list = []

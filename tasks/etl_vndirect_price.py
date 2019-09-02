@@ -101,43 +101,68 @@ class VNDirectCrawlPrice(Utils):
                 self.crawl_price(
                     driver, ticker["ticker_code"], from_date, to_date)
             except Exception as ex:
-                logging.error(traceback.print_exc())
+                logging.warning(getattr(ex, 'message', repr(ex)))
             self.quit_driver(driver)
 
     def crawl_price(self, driver, ticker_code, from_date, to_date):
         try:
             logging.info(
                 f"Crawling {ticker_code} from {from_date} to {to_date}.")
-            self.input_price_params(driver, ticker_code, from_date, to_date)
-            self.load_price(driver, ticker_code)
+            if not self.input_price_params(driver, ticker_code, from_date, to_date):
+                raise Exception(
+                    f"{ticker_code} - No data or failed to open the webpage")
 
-            # Start checking if paging is available, then continue load more data
-            page_no = 2
-            while self.click_next_price(driver, page_no):
-                logging.info(
-                    f"Loading {ticker_code} prices on page {page_no}.")
-                self.load_price(driver, ticker_code)
-                page_no += 1
-
+            df = self.parse_price(driver, ticker_code)
+            last_page = self.get_last_page(driver)
+            if last_page == 1:
+                self.insert_to_db(df)
+            else:
+                # Start checking if paging is available, then continue load more data
+                page_no = last_page
+                while self.click_next_price(driver, page_no):
+                    logging.info(
+                        f"Loading {ticker_code} prices on page {page_no}.")
+                    self.insert_to_db(self.parse_price(driver, ticker_code))
+                    page_no -= 1
             logging.info(
                 f"Complete crawling {ticker_code} from {from_date} to {to_date}.")
         except Exception as ex:
-            logging.error(traceback.print_exc())
+            logging.error(getattr(ex, 'message', repr(ex)))
 
-    def click_next_price(self, driver, page_no, max_retries=15):
+    def get_last_page(self, driver):
+        last_page = 1
+        try:
+            element = WebDriverWait(driver, 10, 1).until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, '#tab-1 > div.paging')))
+            paging_content = element.text.strip()
+
+            # If there are more than 1 page, the paging content will be similar to Page 1/21 ...
+            if "Page" in paging_content:
+                last_page = int(paging_content.split(' ')[1].split('/')[1])
+        except Exception as ex:
+            logging.error(getattr(ex, 'message', repr(ex)))
+
+        return last_page
+
+    def click_next_price(self, driver, page_no, max_retries=20):
         retry = 0
-        while(retry < max_retries):
+        while(retry < max_retries and page_no > 0):
             try:
                 # Check if the paging is availale
-                element = WebDriverWait(driver, 5, 1).until(EC.presence_of_element_located(
+                element = WebDriverWait(driver, 10, 1).until(EC.presence_of_element_located(
                     (By.CSS_SELECTOR, '#tab-1 > div.paging')))
 
                 paging_content = element.text.strip()
                 logging.info(element.text.strip())
-                if(">" in paging_content):
-                    # Click next page
+                if("Page" in paging_content):
+                    # Run javascript to go to next page
                     driver.execute_script(
                         f"javascript:_goTo({page_no})")
+
+                    # Wait until price table appeared
+                    WebDriverWait(driver, 10, 1).until(EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, '#tab-1 > div.box_content_tktt > ul')))
+
                     time.sleep(2)
                     return True
                 else:
@@ -145,52 +170,63 @@ class VNDirectCrawlPrice(Utils):
 
             except Exception as ex:  # Not found the next button
                 if "javascript error:" in str(ex):
-                    logging.error("Not found javascript goto next page")
+                    logging.warning("javascript not found")
                 else:
-                    logging.error(traceback.print_exc())
+                    logging.error("price table/paging not appear yet")
 
                 # resources complete download
                 # If the javascript is not found, driver will refresh number of time to have the web
                 driver.refresh()
                 time.sleep(2)
                 retry += 1
-                logging.info(
-                    f"#{retry} try to click next to page#{page_no}.")
+                logging.info(f"#{retry} retry")
         return False
 
-    def load_price(self, driver, ticker_code):
-        elem = driver.find_element_by_css_selector(
-            "#tab-1 > div.box_content_tktt > ul")
-        price_table = elem.get_attribute("innerHTML")
+    def parse_price(self, driver, ticker_code):
+        df = pd.DataFrame()
 
-        data_dict = {}
-        source = BeautifulSoup(price_table, "html.parser")
+        try:
+            elem = driver.find_element_by_css_selector(
+                "#tab-1 > div.box_content_tktt > ul")
+            price_table = elem.get_attribute("innerHTML")
 
-        # Parsing date
-        days = [datetime.strptime(x.get_text().strip(), "%Y-%m-%d")
-                for x in source.select("li div.row-time.noline")[1:]]
-        data_dict["ticker_code"] = [ticker_code for x in range(len(days))]
-        data_dict["date"] = days
+            data_dict = {}
+            source = BeautifulSoup(price_table, "html.parser")
 
-        # Parsing prices
-        prices = [(float(self.replace_comma(x.get_text().strip())) if self.is_number(self.remove_comma(x.get_text().strip(
-        ))) else x.get_text().strip()) for x in source.select("li div.row1")]
-        data_dict["open"] = prices[6::6]
-        data_dict["highest"] = prices[7::6]
-        data_dict["lowest"] = prices[8::6]
-        data_dict["close"] = prices[9::6]
-        data_dict["average"] = prices[10::6]
-        data_dict["adjusted"] = prices[11::6]
+            # Parsing date
+            days = [datetime.strptime(x.get_text().strip(), "%Y-%m-%d")
+                    for x in source.select("li div.row-time.noline")[1:]]
+            data_dict["ticker_code"] = [ticker_code for x in range(len(days))]
+            data_dict["date"] = days
 
-        # Parsing volume
-        volumes = [(int(float((x.get_text().strip()))) if self.is_number(
-            (x.get_text().strip())) else None) for x in source.select("li div.row3")[2:]]
-        data_dict["trading_volume"] = volumes[0::2]
-        data_dict["put_through_volume"] = volumes[1::2]
+            # Parsing prices
+            prices = [(float(self.replace_comma(x.get_text().strip())) if self.is_number(self.remove_comma(x.get_text().strip(
+            ))) else x.get_text().strip()) for x in source.select("li div.row1")]
+            data_dict["open"] = prices[6::6]
+            data_dict["highest"] = prices[7::6]
+            data_dict["lowest"] = prices[8::6]
+            data_dict["close"] = prices[9::6]
+            data_dict["average"] = prices[10::6]
+            data_dict["adjusted"] = prices[11::6]
 
-        df = pd.DataFrame(data_dict)
-        df = df.where(df.notna(), None)
+            # Parsing volume
+            volumes = [(int(float((x.get_text().strip()))) if self.is_number(
+                (x.get_text().strip())) else None) for x in source.select("li div.row3")[2:]]
+            data_dict["trading_volume"] = volumes[0::2]
+            data_dict["put_through_volume"] = volumes[1::2]
 
+            # Ignore na values
+            df = pd.DataFrame(data_dict)
+            df = df.where(df.notna(), None)
+
+            # Target to insert the earlier date first
+            df.sort_values(by="date", inplace=True)
+        except Exception as ex:
+            logging.warning(getattr(ex, 'message', repr(ex)))
+
+        return df
+
+    def insert_to_db(self, df):
         with psycopg2.connect(self.conn_str) as conn:
             conn.set_session(autocommit=True)
             with conn.cursor() as cur:
@@ -198,31 +234,43 @@ class VNDirectCrawlPrice(Utils):
                     cur.executemany(
                         VNDirectCrawlPrice.insert_price_query, [tuple(x) for x in df.values.tolist()])
                 except Exception as ex:
-                    logging.error(traceback.print_exc())
+                    logging.error(getattr(ex, 'message', repr(ex)))
 
-    def input_price_params(self, driver, ticker_code, from_date, to_date):
-        try:
-            # Refresh the page again to reload resources
-            driver.refresh()
+    def input_price_params(self, driver, ticker_code, from_date, to_date, max_retries=10):
+        retry = 0
+        while(retry < max_retries):
+            try:
+                # Input ticker code
+                elem = WebDriverWait(driver, 10, 1).until(EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, '#symbolID')))
+                elem.send_keys(ticker_code)
 
-            # Input ticker code
-            elem = driver.find_element_by_css_selector('#symbolID')
-            elem.send_keys(ticker_code)
+                # Input time from
+                elem = driver.find_element_by_css_selector(
+                    '#fHistoricalPrice_FromDate')
+                elem.send_keys(from_date)
 
-            # Input time from
-            elem = driver.find_element_by_css_selector(
-                '#fHistoricalPrice_FromDate')
-            elem.send_keys(from_date)
+                # Input time to
+                elem = driver.find_element_by_css_selector(
+                    '#fHistoricalPrice_ToDate')
+                elem.send_keys(to_date)
 
-            # Input time to
-            elem = driver.find_element_by_css_selector(
-                '#fHistoricalPrice_ToDate')
-            elem.send_keys(to_date)
+                # View historical price list
+                elem = driver.find_element_by_css_selector(
+                    '#fHistoricalPrice_View')
+                elem.click()
 
-            # View historical price list
-            elem = driver.find_element_by_css_selector(
-                '#fHistoricalPrice_View')
-            elem.click()
+                time.sleep(2)
+                WebDriverWait(driver, 10, 1).until(EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, '#tab-1 > div.box_content_tktt > ul')))
 
-        except Exception as ex:
-            logging.error(traceback.print_exc())
+                return True
+
+            except Exception as ex:
+                retry += 1
+
+                # Refresh the page again to reload resources
+                driver.refresh()
+                logging.info(f"#{retry} retry")
+                logging.warning(getattr(ex, 'message', repr(ex)))
+        return False
