@@ -1,5 +1,5 @@
 
-import datetime
+from datetime import datetime, timedelta
 import logging
 
 from airflow import DAG
@@ -13,8 +13,25 @@ from vn_stock.tasks.utils import Utils
 
 logger = Utils.get_logger(file_path="./vn_stock.log")
 crawl_ticker = VNDirectCrawlTicker(config.conn_string, logger)
-
 exchanges = Utils.get_exchange(config.conn_string)
+
+default_args = {
+    'owner': 'vanducng',
+    'start_date': datetime(2019, 1, 1),
+    # 'end_date': datetime(2018, 11, 30),
+    'depends_on_past': False,
+    'retries': 3,
+    'retry_delay': timedelta(minutes=5),
+    'catchup': False,
+    'email_on_retry': False
+}
+
+dag = DAG('sparkify_dag',
+
+
+
+          max_active_runs=3
+          )
 
 
 def hello_world():
@@ -23,8 +40,10 @@ def hello_world():
 
 dag = DAG(
     "vn_stock.etl",
-    start_date=datetime.datetime.now() - datetime.timedelta(days=60),
-    schedule_interval='@once',
+    default_args=default_args,
+    description='Scrap data from stock website',
+    # Run on 8am and 8pm when the exchage open and close
+    schedule_interval="0 8,20 * * *",
     max_active_runs=10
 )
 
