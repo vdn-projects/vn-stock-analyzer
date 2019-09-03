@@ -17,7 +17,7 @@ exchanges = Utils.get_exchange(config.conn_string)
 
 default_args = {
     'owner': 'vanducng',
-    'start_date': datetime(2019, 1, 1),
+    'start_date': datetime(2019, 9, 1),
     # 'end_date': datetime(2018, 11, 30),
     'depends_on_past': False,
     'retries': 3,
@@ -37,7 +37,7 @@ dag = DAG(
     description='Scrap data from stock website',
     # Run on 8am and 8pm when the exchage open and close
     schedule_interval="0 8,20 * * *",
-    max_active_runs=10
+    max_active_runs=2
 )
 
 start_operator = DummyOperator(task_id='begin_execution',  dag=dag)

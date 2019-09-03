@@ -230,11 +230,19 @@ class VNDirectCrawlPrice(Utils):
         with psycopg2.connect(self.conn_str) as conn:
             conn.set_session(autocommit=True)
             with conn.cursor() as cur:
-                try:
-                    cur.executemany(
-                        VNDirectCrawlPrice.insert_price_query, [tuple(x) for x in df.values.tolist()])
-                except Exception as ex:
-                    logging.error(getattr(ex, 'message', repr(ex)))
+                for _, row in df.iterrows():
+                    try:
+                        cur.execute(
+                            VNDirectCrawlPrice.insert_price_query, row.to_list())
+                    except Exception as ex:
+                        logging.error(traceback.format_exc())
+
+            # with conn.cursor() as cur:
+            #     try:
+            #         cur.executemany(
+            #             VNDirectCrawlPrice.insert_price_query, [tuple(x) for x in df.values.tolist()])
+            #     except Exception as ex:
+            #         logging.error(getattr(ex, 'message', repr(ex)))
 
     def input_price_params(self, driver, ticker_code, from_date, to_date, max_retries=10):
         retry = 0
