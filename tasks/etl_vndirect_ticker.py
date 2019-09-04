@@ -12,6 +12,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 
+
 import psycopg2
 import pandas as pd
 
@@ -29,9 +30,8 @@ class VNDirectCrawlTicker(Utils):
         DO NOTHING
         """
 
-    def __init__(self, conn_str, logger, start_date="01/01/2010"):
+    def __init__(self, conn_str, start_date="01/01/2010"):
         self.conn_str = conn_str
-        self.logger = logger
         self.start_date = start_date
 
     def init_driver(self):
@@ -62,7 +62,7 @@ class VNDirectCrawlTicker(Utils):
             driver = self.init_driver()
             self.crawl_ticker(driver)
         except Exception as ex:
-            self.logger.error(traceback.print_exc())
+            logging.error(traceback.print_exc())
         self.quit_driver(driver)
 
     def refresh_ticker_page(self, driver, max_retries=10):
@@ -93,7 +93,7 @@ class VNDirectCrawlTicker(Utils):
                     (By.CSS_SELECTOR, '#fSearchSymbol_paging > div')))
 
                 paging_content = element.text.strip()
-                self.logger.info(element.text.strip())
+                logging.info(element.text.strip())
                 if(">" in paging_content):
                     # Click next page
                     driver.execute_script(
@@ -105,16 +105,16 @@ class VNDirectCrawlTicker(Utils):
 
             except Exception as ex:  # Not found the next button
                 if "javascript error:" in str(ex):
-                    self.logger.error("Not found javascript goto next page")
+                    logging.error("Not found javascript goto next page")
                 else:
-                    self.logger.error(traceback.print_exc())
+                    logging.error(traceback.print_exc())
 
                 # resources complete download
                 # If the javascript is not found, driver will refresh number of time to have the web
                 driver.refresh()
                 time.sleep(2)
                 retry += 1
-                self.logger.info(
+                logging.info(
                     f"#{retry} try to click next to page#{page_no}.")
         return False
 
@@ -132,13 +132,13 @@ class VNDirectCrawlTicker(Utils):
             # Load tickers in the next pages
             page_no = 2
             while self.click_next_ticker(driver, page_no):
-                self.logger.info(f"Loading tickers on page {page_no}.")
+                logging.info(f"Loading tickers on page {page_no}.")
                 self.load_ticker(driver)
                 page_no += 1
-            self.logger.info(
+            logging.info(
                 f"Complete crawling all ticker codes.")
         except Exception as ex:
-            self.logger.error(traceback.print_exc())
+            logging.error(traceback.print_exc())
 
     def load_ticker(self, driver):
         # Get ticker table of current selected page
@@ -173,4 +173,4 @@ class VNDirectCrawlTicker(Utils):
                         cur.execute(
                             VNDirectCrawlTicker.insert_ticker_query, row.to_list())
                     except Exception as ex:
-                        self.logger.error(traceback.format_exc())
+                        logging.error(traceback.format_exc())
