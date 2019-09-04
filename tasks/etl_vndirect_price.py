@@ -97,6 +97,8 @@ class VNDirectCrawlPrice(Utils):
         for _, ticker in tickers.iterrows():
             try:
                 from_date = self.last_update(ticker["ticker_code"])
+                if from_date >= to_date:
+                    continue
                 driver = self.init_driver()
                 self.crawl_price(
                     driver, ticker["ticker_code"], from_date, to_date)
