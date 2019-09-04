@@ -11,8 +11,7 @@ from vn_stock.tasks.etl_vndirect_price import VNDirectCrawlPrice
 from vn_stock.tasks import config
 from vn_stock.tasks.utils import Utils
 
-logger = Utils.get_logger(file_path="./vn_stock.log")
-crawl_ticker = VNDirectCrawlTicker(config.conn_string, logger)
+crawl_ticker = VNDirectCrawlTicker(config.conn_string)
 exchanges = Utils.get_exchange(config.conn_string)
 
 default_args = {
@@ -37,7 +36,7 @@ dag = DAG(
     description='Scrap data from stock website',
     # Run on 8am and 8pm when the exchage open and close
     schedule_interval="0 8,20 * * *",
-    max_active_runs=2
+    max_active_runs=1
 )
 
 start_operator = DummyOperator(task_id='begin_execution',  dag=dag)
@@ -58,13 +57,6 @@ for _, exc in exchanges.iterrows():
             dag=dag
         )
     )
-
-# price_ingestion = PythonOperator(
-#     task_id="price_ingestion",
-#     python_callable=crawl_price.execute_etl,
-#     dag=dag)
-
-# ticker_ingestion >> price_ingestion
 
 start_operator >> ticker_ingestion >> [
     x for x in price_ingestion_list] >> end_operator
