@@ -24,6 +24,7 @@ The whole picture derives from 4 main components:
 This project can be accomplished from 2 data sources: ticker URL & price URL hosted by VNDirect. This is where all Vietnam tickers officially registered.  
 
     > Ticker URL: https://www.vndirect.com.vn/portal/thong-tin-co-phieu/nhap-ma-chung-khoan.shtml?request_locale=en_GB
+    
     > Price URL: https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml?request_locale=en
 
 
