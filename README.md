@@ -1,4 +1,4 @@
-# [DEND-Capstone] Vietnam stock data analysis
+# Vietnam stock data analysis
 ## Objectives
 The goal of this project is to collect and visualize the stock price of all tickers in Vietnam. There is quite limited access to API for a single business user, this project aim at scrap data from website, clean, extract and load into datawarehouse. The final product is a maintainable/reliable data pipeline with exposed analytic dashboard hosted on cloud, and end authorized users can access to 24/7 with daily updated data.
 
