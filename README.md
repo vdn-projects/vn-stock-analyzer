@@ -1,8 +1,8 @@
 # [DEND-Capstone] Vietnam stock data analysis
 ## Objectives
-The goal of this project is to collect and visualize the stock price of all tickers in Vietnam. There is quite limited access to API for a single business user, this project aim at scrap data from website, clean, extract and load into datawarehouse. The final product is a maintainable/reliable data pipeline and analytic dashboard hosted on cloud, and end authorized users can access to 24/7 with daily updated data.
+The goal of this project is to collect and visualize the stock price of all tickers in Vietnam. There is quite limited access to API for a single business user, this project aim at scrap data from website, clean, extract and load into datawarehouse. The final product is a maintainable/reliable data pipeline with exposed analytic dashboard hosted on cloud, and end authorized users can access to 24/7 with daily updated data.
 
-Data are collected for almost 10 years from 2010 to support the analytic (such as backtest or trading strategy for a particular ticker) steps afterward. For the scope of this project, the stock price will be visuzlized in time series domain for the monitor pupose only.
+Data are collected for almost 10 years from 2010 to support the analytic (such as backtest or trading strategy for a particular ticker) steps afterward. For the scope of this project, the stock price will be visualized in time series domain for the monitor pupose only.
 
 The report is live from HERE:
 [Link To Report Dashboard](http://ec2-54-255-151-44.ap-southeast-1.compute.amazonaws.com:9999/r/15)
@@ -24,7 +24,7 @@ The whole picture derives from 4 main components:
 This project can be accomplished from 2 data sources: ticker URL & price URL hosted by VNDirect. This is where all Vietnam tickers officially registered.  
 
     > Ticker URL: https://www.vndirect.com.vn/portal/thong-tin-co-phieu/nhap-ma-chung-khoan.shtml?request_locale=en_GB
-    
+
     > Price URL: https://www.vndirect.com.vn/portal/thong-ke-thi-truong-chung-khoan/lich-su-gia.shtml?request_locale=en
 
 
@@ -59,7 +59,7 @@ Data model is simply described as below.
 </p>
 
 ## ETL Job
-Although the data model looks simple, the heavy task of ETL job is to extract the needed data from html format. In this project, Selenium and BeautifulSoup libraries are used to automate the process of rawling stock data.
+Although the data model looks simple, the heavy task of ETL job is to extract the needed data from html format. In this project, Selenium and BeautifulSoup libraries are used to automate the process of crawling stock data.
 
 The pipeline includes 2 main steps: ticker ingestion and price ingestion. At price ingestion step, it is devided into different flows by exchange to enable mutithread processing for better performance. Within each thread, the data quality check has been includeded before every insert command.
 
