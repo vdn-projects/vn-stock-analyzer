@@ -103,7 +103,8 @@ Within `vn_stock` project, `dag.py` lists the pipeline design and scheduler sett
 
     > `python vn_stock/task/setup_database.py`
 
-## Scenarios concerns and solution
-* Data Increased by 100x: move data storage to AWS Redshift which is designed to handling columnar store for better performance.
-* The pipeline would be run on a daily basis by 7 am every day: easily setting with Airflow scheduler. The current one is sheduled on 8AM and 8 PM daily.
+## Future improvement
+* When data increased by 100x: move data storage to AWS Redshift which is designed to handling columnar store for better performance.
 * The database needed to be accessed by 100+ people: when the user access increase, it is necessary to setup the role and group for particular purpose (view/modify) to enhance the security management and performance effectiveness. Refer here: [Managing PostgreSQL users](https://aws.amazon.com/blogs/database/managing-postgresql-users-and-roles/)
+* Integrate Spark for ticker analytic
+* Crawl more data source to enhance the data features
