@@ -1,7 +1,7 @@
 import os
 
-db_username = "vietnamstock_usr1"
-db_psw = "stock@2019"
+db_username = "xxx"
+db_psw = "xxx"
 
 
-conn_string = f"host=167.99.68.250 dbname=vietnam_stock user={db_username} password={db_psw}"
+conn_string = f"host=xxx.xxx.xxx.xxx dbname=vietnam_stock user={db_username} password={db_psw}"
